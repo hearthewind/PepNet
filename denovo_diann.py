@@ -218,7 +218,7 @@ f.writelines(['TITLE\tDENOVO\tScore\tPPM Difference\tPositional Score\n'])
 # sequencing loop
 i = 0
 while True:
-    spectra = read_spec(input_header, count=args.loop_size, previous_loc=i)
+    spectra = read_spec(input_header, args.input_folder, count=args.loop_size, previous_loc=i)
     if len(spectra) <= 0:
         break
 
