@@ -1,6 +1,7 @@
 import os
 
 import pandas as pd
+from tqdm import tqdm
 
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
 
@@ -27,11 +28,12 @@ def read_spec(header, data_dir, count=-1, previous_loc=0):
 
     chosen_header = header.iloc[previous_loc:]
 
-    for peptide in chosen_header.iterrows():
+    for _, peptide in chosen_header.iterrows():
 
         c = int(peptide['charge'])
 
         pep = str(peptide['mod_sequence'])
+        pep = pep.replace('c', 'C')
 
         mass = Ion.precursorion2mass(float(peptide['precursor_mz']), c)
         hcd = 0
@@ -43,17 +45,20 @@ def read_spec(header, data_dir, count=-1, previous_loc=0):
         related_ms1 = spec['related_ms1']
         related_ms2 = spec['related_ms2']
 
-        mz_arrays = []
-        intensity_arrays = []
-        for i, row in related_ms2.iterrows():
-            mzs = row['mz']
-            intensities = row['intensity']
+        # mz_arrays = []
+        # intensity_arrays = []
+        # for i, row in related_ms2.iterrows():
+        #     mzs = row['mz']
+        #     intensities = row['intensity']
+        #
+        #     mz_arrays.append(mzs)
+        #     intensity_arrays.append(intensities)
+        #
+        # mz_arrays = np.concatenate(mz_arrays)
+        # intensity_arrays = np.concatenate(intensity_arrays)
 
-            mz_arrays.append(mzs)
-            intensity_arrays.append(intensities)
-
-        mz_arrays = np.concatenate(mz_arrays)
-        intensity_arrays = np.concatenate(intensity_arrays)
+        mz_arrays = related_ms2.iloc[2]['mz']
+        intensity_arrays = related_ms2.iloc[2]['intensity']
 
         sorted_indices = np.argsort(mz_arrays)
         mz_arrays = mz_arrays[sorted_indices]
@@ -211,6 +216,15 @@ model = k.models.load_model(args.model, compile=0)
 
 print("Starting reading header of:", args.input_header)
 input_header = pd.read_csv(args.input_header, index_col='feature_id')
+processed_header = []
+
+for _, row in tqdm(input_header.iterrows(), total=len(input_header), desc='Removing modification from data'):
+    seq = row['mod_sequence']
+    if 'm' in seq:
+        continue
+    processed_header.append(row)
+
+processed_header = pd.DataFrame(processed_header)
 
 f = open(args.output, 'w+')
 f.writelines(['TITLE\tDENOVO\tScore\tPPM Difference\tPositional Score\n'])
@@ -218,7 +232,7 @@ f.writelines(['TITLE\tDENOVO\tScore\tPPM Difference\tPositional Score\n'])
 # sequencing loop
 i = 0
 while True:
-    spectra = read_spec(input_header, args.input_folder, count=args.loop_size, previous_loc=i)
+    spectra = read_spec(processed_header, args.input_folder, count=args.loop_size, previous_loc=i)
     if len(spectra) <= 0:
         break
 
