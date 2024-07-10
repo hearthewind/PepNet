@@ -3,6 +3,8 @@ import os
 import pandas as pd
 from tqdm import tqdm
 
+from train_diann import filter_header, process_spec
+
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
 
 import argparse
@@ -30,42 +32,9 @@ def read_spec(header, data_dir, count=-1, previous_loc=0):
 
     for _, peptide in chosen_header.iterrows():
 
-        c = int(peptide['charge'])
+        spectrum = process_spec(peptide, data_dir)
 
-        pep = str(peptide['mod_sequence'])
-        pep = pep.replace('c', 'C')
-
-        mass = Ion.precursorion2mass(float(peptide['precursor_mz']), c)
-        hcd = 0
-
-        with open(os.path.join(data_dir, peptide['MSGP File Name']), 'rb') as f:
-            f.seek(peptide['MSGP Datablock Pointer'])
-            spec = pickle.loads(gzip.decompress(f.read(peptide['MSGP Datablock Length'])))
-
-        related_ms1 = spec['related_ms1']
-        related_ms2 = spec['related_ms2']
-
-        # mz_arrays = []
-        # intensity_arrays = []
-        # for i, row in related_ms2.iterrows():
-        #     mzs = row['mz']
-        #     intensities = row['intensity']
-        #
-        #     mz_arrays.append(mzs)
-        #     intensity_arrays.append(intensities)
-        #
-        # mz_arrays = np.concatenate(mz_arrays)
-        # intensity_arrays = np.concatenate(intensity_arrays)
-
-        mz_arrays = related_ms2.iloc[2]['mz']
-        intensity_arrays = related_ms2.iloc[2]['intensity']
-
-        sorted_indices = np.argsort(mz_arrays)
-        mz_arrays = mz_arrays[sorted_indices]
-        intensity_arrays = intensity_arrays[sorted_indices]
-
-        spectra.append({'pep': pep, 'charge': c, 'type': 3, 'nmod': 0, 'mod': np.zeros(len(pep), 'int32'),
-                    'mass': mass, 'mz': mz_arrays, 'it': intensity_arrays, 'nce': hcd})
+        spectra.append(spectrum)
 
         if count > 0 and len(spectra) >= count:
             break
@@ -179,12 +148,16 @@ def denovo(model, spectra, batch_size):
     peps = [sp['pep'] for sp in spectra]
 
     predictions = model.predict(data_seq(spectra, input_processor, batch_size, xonly=True), verbose=1)
+    predictions = predictions[-1] #TODO(m) this is neccessary when training our own model
 
     for rst, sp in zip(predictions, spectra):
         ms, c = sp['mass'], sp['charge']
 
         # run post correction
-        pep, pos, positional_score = post_correction(rst, ms, c)
+        try:
+            pep, pos, positional_score = post_correction(rst, ms, c)
+        except KeyError as e:
+            raise(e)
 
         predict_peps.append(pep)
         positional_scores.append(positional_score)
@@ -216,15 +189,7 @@ model = k.models.load_model(args.model, compile=0)
 
 print("Starting reading header of:", args.input_header)
 input_header = pd.read_csv(args.input_header, index_col='feature_id')
-processed_header = []
-
-for _, row in tqdm(input_header.iterrows(), total=len(input_header), desc='Removing modification from data'):
-    seq = row['mod_sequence']
-    if 'm' in seq:
-        continue
-    processed_header.append(row)
-
-processed_header = pd.DataFrame(processed_header)
+input_header = filter_header(input_header)
 
 f = open(args.output, 'w+')
 f.writelines(['TITLE\tDENOVO\tScore\tPPM Difference\tPositional Score\n'])
@@ -232,7 +197,7 @@ f.writelines(['TITLE\tDENOVO\tScore\tPPM Difference\tPositional Score\n'])
 # sequencing loop
 i = 0
 while True:
-    spectra = read_spec(processed_header, args.input_folder, count=args.loop_size, previous_loc=i)
+    spectra = read_spec(input_header, args.input_folder, count=args.loop_size, previous_loc=i)
     if len(spectra) <= 0:
         break
 

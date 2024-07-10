@@ -84,6 +84,7 @@ for i, a in enumerate(amino_list):
 id2amino = {0: '*', len(amino_list) + 1: ']', len(amino_list) + 2: '['}
 for a in amino_list:
     id2amino[amino2id[a]] = a
+print('id2amino', id2amino)
 
 mass_list = asnp32([0] + [mono[a] for a in amino_list] + [0, 0])
 
@@ -165,8 +166,10 @@ def decode(seq2d):
     return np.int32([np.argmax(seq2d[i]) for i in range(len(seq2d))])
 
 def topep(seq):
-    return ''.join(map(lambda n: id2amino[n], seq)).strip("*[]")
-
+    try:
+        return ''.join(map(lambda n: id2amino[n], seq)).strip("*[]")
+    except KeyError as e: # This could be thrown
+        raise(e)
 def toseq(pep):
     return np.int32([amino2id[c] for c in pep.upper()])
 

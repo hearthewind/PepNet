@@ -1,12 +1,13 @@
 #!/usr/bin/env python
 # coding: utf-8
-
+import gzip
 # ### Import
 
 # In[1]:
 
 
 import os
+import pickle
 import time
 import numpy as np
 import matplotlib
@@ -28,6 +29,10 @@ from pyteomics import mgf, mass
 
 
 import tensorflow as tf
+from tqdm import tqdm
+
+from BasicClass import Ion
+
 print(tf.__version__)
 
 import tensorflow.keras as keras
@@ -46,9 +51,87 @@ import tensorflow_addons as tfa
 from tensorflow_addons.layers import InstanceNormalization
 from tensorflow_addons.optimizers import RectifiedAdam as radam
 
+## my own functions #TODO(m)
+
+def filter_header(input_header):
+    processed_header = []
+
+    for _, row in tqdm(input_header.iterrows(), total=len(input_header), desc='Removing modification from data'):
+        seq = row['mod_sequence']
+        if 'm' in seq:
+            continue
+        if len(seq) >= 32:
+            continue
+        processed_header.append(row)
+
+    processed_header = pd.DataFrame(processed_header)
+    return processed_header
+
+def process_spec(peptide, data_dir):
+    hcd = 0
+
+    c = int(peptide['charge'])
+
+    pep = str(peptide['mod_sequence'])
+    pep = pep.replace('c', 'C').replace('I', 'L')
+
+    mass_peptide = Ion.precursorion2mass(peptide['precursor_mz'], c)
+
+    with open(os.path.join(data_dir, peptide['MSGP File Name']), 'rb') as f:
+        f.seek(peptide['MSGP Datablock Pointer'])
+        spec = pickle.loads(gzip.decompress(f.read(peptide['MSGP Datablock Length'])))
+
+    related_ms1 = spec['related_ms1']
+    related_ms2 = spec['related_ms2']
+
+    mz_arrays = []
+    intensity_arrays = []
+    for i, row in related_ms2.iterrows():
+        mzs = row['mz']
+        intensities = row['intensity']
+
+        mz_arrays.append(mzs)
+        intensity_arrays.append(intensities)
+
+    mz_arrays = np.concatenate(mz_arrays)
+    intensity_arrays = np.concatenate(intensity_arrays)
+
+    # mz_arrays = related_ms2.iloc[2]['mz']
+    # intensity_arrays = related_ms2.iloc[2]['intensity']
+
+    sorted_indices = np.argsort(mz_arrays)
+    mz_arrays = mz_arrays[sorted_indices]
+    intensity_arrays = intensity_arrays[sorted_indices]
+
+    ret = {'pep': pep, 'charge': c, 'type': 3, 'nmod': 0, 'mod': np.zeros(len(pep), 'int32'),
+           'mass': mass_peptide, 'mz': mz_arrays, 'it': intensity_arrays, 'nce': hcd}
+    return ret
+class DiannDataset():
+    def __init__(self, input_header, input_folder):
+        self.input_header = input_header
+        self.input_folder = input_folder
+
+    def __getitem__(self, idx):
+        if isinstance(idx, int):
+            head = self.input_header.iloc[idx]
+            spectrum = process_spec(head, self.input_folder)
+            return spectrum
+        elif isinstance(idx, slice):
+            head = self.input_header.iloc[idx]
+            ret = []
+            for _, row in head.iterrows():
+                spectrum = process_spec(row, self.input_folder)
+                ret.append(spectrum)
+
+            return ret
+    def __len__(self):
+        return len(self.input_header)
+
+    def shuffle(self):
+        self.input_header = self.input_header.sample(frac=1)
+
 
 # ### Help functions
-
 # In[3]:
 
 
@@ -77,7 +160,7 @@ class data_seq(k.utils.Sequence):
 
     def on_epoch_begin(self, ep):
         if ep > 0 and self.shuffle:
-            np.random.shuffle(self.sps)
+            self.sps.shuffle()
 
     def __len__(self):
         return math.ceil(len(self.sps) / self.batch_size)
@@ -818,8 +901,8 @@ class train_mgr():
         return self.dm, self.novo
 
     def prepare_data(self):
-        self.trainingset = i2l(filter_spectra(readmgf('train.mgf', 'hcd')))
-        self.valset = i2l(filter_spectra(readmgf('validation.mgf', 'hcd')))
+        self.trainingset = DiannDataset(input_header_train, input_folder_train)
+        self.valset = DiannDataset(input_header_valid, input_folder_valid)
 
     def compile(self, bsz=None, lr=None):
         ### para
@@ -839,20 +922,24 @@ class train_mgr():
                     verbose=1, callbacks=callbacks)
 
 # In[28]:
+if __name__ == '__main__':
 
-input_header_train = '/home/m/data3/Raw_Msgp_for_DeepNovo/453386_train_valid/386train.csv'
-input_header_valid = '/home/m/data3/Raw_Msgp_for_DeepNovo/453386_train_valid/386valid.csv'
-input_folder = '/home/m/data3/Raw_Msgp_for_DeepNovo/453386_train_valid/'
+    input_header_train = '/home/m/data3/Raw_Msgp_for_DeepNovo/453386_train_valid/386valid.csv'
+    input_header_valid = '/home/m/data3/Raw_Msgp_for_DeepNovo/453386_train_valid/386valid.csv'
+    input_folder_train = '/home/m/data3/Raw_Msgp_for_DeepNovo/453386_train_valid/'
+    input_folder_valid = '/home/m/data3/Raw_Msgp_for_DeepNovo/453386_train_valid/'
 
-input_header_train = pd.read_csv(input_header_train, index_col='feature_id')
-input_header_valid = pd.read_csv(input_header_valid, index_col='feature_id')
+    input_header_train = pd.read_csv(input_header_train, index_col='feature_id')
+    input_header_valid = pd.read_csv(input_header_valid, index_col='feature_id')
+    input_header_train = filter_header(input_header_train)
+    input_header_valid = filter_header(input_header_valid)
 
-manager = train_mgr()
+    manager = train_mgr()
 
-dm, novo = manager.setup(summary=1)
+    dm, novo = manager.setup(summary=1)
 
-manager.compile()
+    manager.compile()
 
-manager.prepare_data()
+    manager.prepare_data()
 
-manager.run()
+    manager.run()
