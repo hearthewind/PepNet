@@ -33,6 +33,7 @@ from tqdm import tqdm
 
 from BasicClass import Ion
 
+# os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 print(tf.__version__)
 
 import tensorflow.keras as keras
@@ -893,7 +894,7 @@ class train_mgr():
     def setup(self, **kws):
         self.his = tf.keras.callbacks.History()
         self.callbacks = [
-            ModelCheckpoint('novo.hdf5', save_best_only=True, monitor='val_peps_mask_acc')
+            ModelCheckpoint(model_save_name, save_best_only=True, monitor='val_peps_mask_acc')
         ]
 
         self.builder = model_builder(hyper)
@@ -907,7 +908,8 @@ class train_mgr():
     def compile(self, bsz=None, lr=None):
         ### para
         hyper.dynamic.eps = 50
-        hyper.dynamic.bsz = 32 * int(hyper.pre * 4 * 2.5) #* 2
+        # hyper.dynamic.bsz = 32 * int(hyper.pre * 4 * 2.5) #* 2
+        hyper.dynamic.bsz = 64 * int(hyper.pre * 4 * 2.5)  # * 2
         hyper.dynamic.lr = lr if lr else (hyper.dynamic.bsz / 1024) * 0.0009 * 16 * 6
 
         hyper.dynamic.opt = radam(lr=hyper.dynamic.lr)
@@ -924,10 +926,11 @@ class train_mgr():
 # In[28]:
 if __name__ == '__main__':
 
-    input_header_train = '/home/m/data3/Raw_Msgp_for_DeepNovo/453386_train_valid/386valid.csv'
+    input_header_train = '/home/m/data3/Raw_Msgp_for_DeepNovo/453386_train_valid/386train.csv'
     input_header_valid = '/home/m/data3/Raw_Msgp_for_DeepNovo/453386_train_valid/386valid.csv'
     input_folder_train = '/home/m/data3/Raw_Msgp_for_DeepNovo/453386_train_valid/'
     input_folder_valid = '/home/m/data3/Raw_Msgp_for_DeepNovo/453386_train_valid/'
+    model_save_name = '386model.h5'
 
     input_header_train = pd.read_csv(input_header_train, index_col='feature_id')
     input_header_valid = pd.read_csv(input_header_valid, index_col='feature_id')
