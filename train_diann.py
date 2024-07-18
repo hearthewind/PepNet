@@ -33,7 +33,7 @@ from tqdm import tqdm
 
 from BasicClass import Ion
 
-# os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 print(tf.__version__)
 
 import tensorflow.keras as keras
@@ -69,8 +69,6 @@ def filter_header(input_header):
     return processed_header
 
 def process_spec(peptide, data_dir):
-    hcd = 0
-
     c = int(peptide['charge'])
 
     pep = str(peptide['mod_sequence'])
@@ -97,15 +95,16 @@ def process_spec(peptide, data_dir):
     mz_arrays = np.concatenate(mz_arrays)
     intensity_arrays = np.concatenate(intensity_arrays)
 
-    # mz_arrays = related_ms2.iloc[2]['mz']
-    # intensity_arrays = related_ms2.iloc[2]['intensity']
+    # center_idx = len(related_ms2) // 2
+    # mz_arrays = related_ms2.iloc[center_idx]['mz']
+    # intensity_arrays = related_ms2.iloc[center_idx]['intensity']
 
     sorted_indices = np.argsort(mz_arrays)
     mz_arrays = mz_arrays[sorted_indices]
     intensity_arrays = intensity_arrays[sorted_indices]
 
     ret = {'pep': pep, 'charge': c, 'type': 3, 'nmod': 0, 'mod': np.zeros(len(pep), 'int32'),
-           'mass': mass_peptide, 'mz': mz_arrays, 'it': intensity_arrays, 'nce': hcd}
+           'mass': mass_peptide, 'mz': mz_arrays, 'it': intensity_arrays, 'nce': 0}
     return ret
 class DiannDataset():
     def __init__(self, input_header, input_folder):
@@ -909,7 +908,7 @@ class train_mgr():
         ### para
         hyper.dynamic.eps = 50
         # hyper.dynamic.bsz = 32 * int(hyper.pre * 4 * 2.5) #* 2
-        hyper.dynamic.bsz = 64 * int(hyper.pre * 4 * 2.5)  # * 2
+        hyper.dynamic.bsz = 16 * int(hyper.pre * 4 * 2.5)  # * 2
         hyper.dynamic.lr = lr if lr else (hyper.dynamic.bsz / 1024) * 0.0009 * 16 * 6
 
         hyper.dynamic.opt = radam(lr=hyper.dynamic.lr)
@@ -926,11 +925,16 @@ class train_mgr():
 # In[28]:
 if __name__ == '__main__':
 
-    input_header_train = '/home/m/data3/Raw_Msgp_for_DeepNovo/453386_train_valid/386train.csv'
-    input_header_valid = '/home/m/data3/Raw_Msgp_for_DeepNovo/453386_train_valid/386valid.csv'
-    input_folder_train = '/home/m/data3/Raw_Msgp_for_DeepNovo/453386_train_valid/'
-    input_folder_valid = '/home/m/data3/Raw_Msgp_for_DeepNovo/453386_train_valid/'
-    model_save_name = '386model.h5'
+    # input_header_train = '/home/m/data3/Raw_Msgp_for_DeepNovo/453386_train_valid/386valid.csv'
+    # input_header_valid = '/home/m/data3/Raw_Msgp_for_DeepNovo/453386_train_valid/386valid.csv'
+    # input_folder_train = '/home/m/data3/Raw_Msgp_for_DeepNovo/453386_train_valid/'
+    # input_folder_valid = '/home/m/data3/Raw_Msgp_for_DeepNovo/453386_train_valid/'
+
+    input_header_train = '/home/m/data3/Raw_Msgp_for_DeepNovo/plasma/20150624_PCL_Plasma_25x2mzDIA_400_450_rep1_1.csv'
+    input_header_valid = '/home/m/data3/Raw_Msgp_for_DeepNovo/plasma/20150624_PCL_Plasma_25x2mzDIA_400_450_rep1_1.csv'
+    input_folder_train = '/home/m/data3/Raw_Msgp_for_DeepNovo/plasma/'
+    input_folder_valid = '/home/m/data3/Raw_Msgp_for_DeepNovo/plasma/'
+    model_save_name = 'plasma_model_test_mulspec.h5'
 
     input_header_train = pd.read_csv(input_header_train, index_col='feature_id')
     input_header_valid = pd.read_csv(input_header_valid, index_col='feature_id')
